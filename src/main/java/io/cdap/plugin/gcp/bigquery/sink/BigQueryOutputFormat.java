@@ -160,7 +160,7 @@ public class BigQueryOutputFormat extends ForwardingBigQueryFileOutputFormat<Str
 
     // Get the output path.
     Path outputPath = BigQueryOutputConfiguration.getGcsOutputPath(conf);
-    LOG.info("Using output path '%s'.", outputPath);
+    LOG.info("Using output path '{}'.", outputPath);
 
     // Error if the output path already exists.
     FileSystem outputFileSystem = outputPath.getFileSystem(conf);
