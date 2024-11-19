@@ -34,7 +34,9 @@ import io.cdap.cdap.etl.api.Emitter;
 import io.cdap.cdap.etl.api.FailureCollector;
 import io.cdap.cdap.etl.api.batch.BatchSink;
 import io.cdap.cdap.etl.api.batch.BatchSinkContext;
+import io.cdap.cdap.etl.api.exception.ErrorDetailsProviderSpec;
 import io.cdap.plugin.common.Asset;
+import io.cdap.plugin.gcp.bigquery.common.BigQueryErrorDetailsProvider;
 import io.cdap.plugin.gcp.bigquery.sink.lib.BigQueryTableFieldSchema;
 import io.cdap.plugin.gcp.bigquery.util.BigQueryConstants;
 import io.cdap.plugin.gcp.bigquery.util.BigQueryTypeSize;
@@ -116,6 +118,8 @@ public abstract class AbstractBigQuerySink extends BatchSink<StructuredRecord, S
                                         storage, bucket, bucketName,
                                         config.getLocation(), cmekKeyName);
     }
+    // set error details provider
+    context.setErrorDetailsProvider(new ErrorDetailsProviderSpec(BigQueryErrorDetailsProvider.class.getName()));
     prepareRunInternal(context, bigQuery, bucketName);
   }
 
@@ -124,9 +128,9 @@ public abstract class AbstractBigQuerySink extends BatchSink<StructuredRecord, S
     String gcsPath;
     String bucket = getConfig().getBucket();
     if (bucket == null) {
-      gcsPath = String.format("gs://%s", runUUID.toString());
+      gcsPath = String.format("gs://%s", runUUID);
     } else {
-      gcsPath = String.format(gcsPathFormat, bucket, runUUID.toString());
+      gcsPath = String.format(gcsPathFormat, bucket, runUUID);
     }
     try {
       BigQueryUtil.deleteTemporaryDirectory(baseConfiguration, gcsPath);
@@ -327,9 +331,8 @@ public abstract class AbstractBigQuerySink extends BatchSink<StructuredRecord, S
    *
    * @return Hadoop configuration
    */
-  protected Configuration getOutputConfiguration() throws IOException {
-    Configuration configuration = new Configuration(baseConfiguration);
-    return configuration;
+  protected Configuration getOutputConfiguration() {
+    return new Configuration(baseConfiguration);
   }
 
   /**

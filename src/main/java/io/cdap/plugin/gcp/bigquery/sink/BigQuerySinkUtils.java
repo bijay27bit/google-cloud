@@ -35,8 +35,12 @@ import com.google.cloud.storage.StorageException;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.Gson;
 import io.cdap.cdap.api.data.schema.Schema;
+import io.cdap.cdap.api.exception.ErrorCategory;
+import io.cdap.cdap.api.exception.ErrorType;
+import io.cdap.cdap.api.exception.ErrorUtils;
 import io.cdap.cdap.etl.api.FailureCollector;
 import io.cdap.cdap.etl.api.batch.BatchSinkContext;
+import io.cdap.cdap.etl.api.exception.ErrorPhase;
 import io.cdap.cdap.etl.api.validation.ValidationFailure;
 import io.cdap.plugin.common.Asset;
 import io.cdap.plugin.common.LineageRecorder;
@@ -110,11 +114,10 @@ public final class BigQuerySinkUtils {
    * @param bucketName  the name of the bucket
    * @param location    the location of the resources, this is only applied if both the bucket and dataset do not exist
    * @param cmekKeyName the name of the cmek key
-   * @throws IOException if there was an error creating or fetching any GCP resource
    */
   public static void createResources(BigQuery bigQuery, Storage storage,
                                      DatasetId datasetId, String bucketName, @Nullable String location,
-                                     @Nullable CryptoKeyName cmekKeyName) throws IOException {
+                                     @Nullable CryptoKeyName cmekKeyName) {
     // Get the required Dataset and bucket instances using the supplied clients
     Dataset dataset = bigQuery.getDataset(datasetId);
     Bucket bucket = storage.get(bucketName);
@@ -138,11 +141,10 @@ public final class BigQuerySinkUtils {
    * @param bucketName the name of the bucket
    * @param location   the location of the resources, this is only applied if both the bucket and dataset do not exist
    * @param cmekKey    the name of the cmek key
-   * @throws IOException
    */
   public static void createResources(BigQuery bigQuery, @Nullable Dataset dataset, DatasetId datasetId,
                                      Storage storage, @Nullable Bucket bucket, String bucketName,
-                                     @Nullable String location, @Nullable CryptoKeyName cmekKey) throws IOException {
+                                     @Nullable String location, @Nullable CryptoKeyName cmekKey) {
     if (dataset == null && bucket == null) {
       createBucket(storage, bucketName, location, cmekKey,
                    () -> String.format("Unable to create Cloud Storage bucket '%s'", bucketName));
@@ -174,11 +176,10 @@ public final class BigQuerySinkUtils {
    * @param location     Location for this dataset.
    * @param cmekKeyName  CMEK key to use for this dataset.
    * @param errorMessage Supplier for the error message to output if the dataset could not be created.
-   * @throws IOException if the dataset could not be created.
    */
   private static void createDataset(BigQuery bigQuery, DatasetId dataset, @Nullable String location,
                                     @Nullable CryptoKeyName cmekKeyName,
-                                    Supplier<String> errorMessage) throws IOException {
+                                    Supplier<String> errorMessage) {
     DatasetInfo.Builder builder = DatasetInfo.newBuilder(dataset);
     if (location != null) {
       builder.setLocation(location);
@@ -194,7 +195,11 @@ public final class BigQuerySinkUtils {
         // A conflict means the dataset already exists (https://cloud.google.com/bigquery/troubleshooting-errors)
         // This most likely means multiple stages in the same pipeline are trying to create the same dataset.
         // Ignore this and move on, since all that matters is that the dataset exists.
-        throw new IOException(errorMessage.get(), e);
+        ErrorUtils.ActionErrorPair pair = ErrorUtils.getActionErrorByStatusCode(e.getCode());
+        String errorReason = String.format("%s %s %s", e.getCode(), e.getMessage(), pair.getCorrectiveAction());
+        throw ErrorUtils.getProgramFailureException(
+          new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorReason, errorMessage.get(),
+          pair.getErrorType(), true, e);
       }
     }
   }
@@ -207,11 +212,10 @@ public final class BigQuerySinkUtils {
    * @param location     Location for this dataset.
    * @param cmekKeyName  CMEK key to use for this dataset.
    * @param errorMessage Supplier for the error message to output if the dataset could not be created.
-   * @throws IOException if the dataset could not be created.
    */
   public static void createDatasetIfNotExists(BigQuery bigQuery, DatasetId datasetId, @Nullable String location,
                                               @Nullable CryptoKeyName cmekKeyName,
-                                              Supplier<String> errorMessage) throws IOException {
+                                              Supplier<String> errorMessage) {
     // Check if dataset exists
     Dataset ds = bigQuery.getDataset(datasetId);
     // Create dataset if needed
@@ -228,11 +232,10 @@ public final class BigQuerySinkUtils {
    * @param location     Location for this bucket.
    * @param cmekKeyName  CMEK key to use for this bucket.
    * @param errorMessage Supplier for the error message to output if the bucket could not be created.
-   * @throws IOException if the bucket could not be created.
    */
   private static void createBucket(Storage storage, String bucket, @Nullable String location,
                                    @Nullable CryptoKeyName cmekKeyName,
-                                   Supplier<String> errorMessage) throws IOException {
+                                   Supplier<String> errorMessage) {
     try {
       GCPUtils.createBucket(storage, bucket, location, cmekKeyName);
     } catch (StorageException e) {
@@ -240,7 +243,11 @@ public final class BigQuerySinkUtils {
         // A conflict means the bucket already exists
         // This most likely means multiple stages in the same pipeline are trying to create the same dataset.
         // Ignore this and move on, since all that matters is that the dataset exists.
-        throw new IOException(errorMessage.get(), e);
+        ErrorUtils.ActionErrorPair pair = ErrorUtils.getActionErrorByStatusCode(e.getCode());
+        String errorReason = String.format("%s %s %s", e.getCode(), e.getMessage(), pair.getCorrectiveAction());
+        throw ErrorUtils.getProgramFailureException(
+          new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorReason, errorMessage.get(),
+          pair.getErrorType(), true, e);
       }
     }
   }
@@ -318,13 +325,12 @@ public final class BigQuerySinkUtils {
    * @param tableName     name of the table to use
    * @param gcsPath       GCS path to use for output
    * @param fields        list of BigQuery table fields
-   * @throws IOException if the output cannot be configured
    */
   public static void configureOutput(Configuration configuration,
                                      DatasetId datasetId,
                                      String tableName,
                                      String gcsPath,
-                                     List<BigQueryTableFieldSchema> fields) throws IOException {
+                                     List<BigQueryTableFieldSchema> fields) {
 
     // Set up table schema
     BigQueryTableSchema outputTableSchema = new BigQueryTableSchema();
@@ -337,13 +343,19 @@ public final class BigQuerySinkUtils {
     }
 
     BigQueryFileFormat fileFormat = getFileFormat(fields);
-    BigQueryOutputConfiguration.configure(
-      configuration,
-      String.format("%s:%s.%s", datasetId.getProject(), datasetId.getDataset(), tableName),
-      outputTableSchema,
-      gcsPath,
-      fileFormat,
-      getOutputFormat(fileFormat));
+    try {
+      BigQueryOutputConfiguration.configure(
+        configuration,
+        String.format("%s:%s.%s", datasetId.getProject(), datasetId.getDataset(), tableName),
+        outputTableSchema,
+        gcsPath,
+        fileFormat,
+        getOutputFormat(fileFormat));
+    } catch (IOException e) {
+      throw ErrorUtils.getProgramFailureException(
+        new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), "Unable to configure output",
+        "Unable to configure output for BigQuery sink", ErrorType.UNKNOWN, true, e);
+    }
   }
 
   /**
@@ -354,13 +366,12 @@ public final class BigQuerySinkUtils {
    * @param tableName     name of the table to use
    * @param gcsPath       GCS path to use for output
    * @param fields        list of BigQuery table fields
-   * @throws IOException if the output cannot be configured
    */
   public static void configureMultiSinkOutput(Configuration configuration,
                                               DatasetId datasetId,
                                               String tableName,
                                               String gcsPath,
-                                              List<BigQueryTableFieldSchema> fields) throws IOException {
+                                              List<BigQueryTableFieldSchema> fields) {
     configureOutput(configuration,
                     datasetId,
                     tableName,

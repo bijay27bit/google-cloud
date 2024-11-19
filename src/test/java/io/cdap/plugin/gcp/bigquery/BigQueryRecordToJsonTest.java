@@ -477,9 +477,9 @@ public class BigQueryRecordToJsonTest {
 
   /**
    * Empty JSON string is not a valid JSON string and should throw an exception.
-   * @throws IOException
+   * @throws IllegalArgumentException
    */
-  @Test(expected = IllegalStateException.class)
+  @Test(expected = IllegalArgumentException.class)
   public void testEmptyJsonString() throws IOException {
     Schema recordSchema = Schema.recordOf(
             "record",

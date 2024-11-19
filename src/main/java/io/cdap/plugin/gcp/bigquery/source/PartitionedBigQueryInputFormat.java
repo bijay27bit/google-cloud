@@ -37,6 +37,9 @@ import com.google.cloud.hadoop.util.HadoopConfigurationProperty;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
+import io.cdap.cdap.api.exception.ErrorCategory;
+import io.cdap.cdap.api.exception.ErrorType;
+import io.cdap.cdap.api.exception.ErrorUtils;
 import io.cdap.plugin.gcp.bigquery.util.BigQueryConstants;
 import io.cdap.plugin.gcp.bigquery.util.BigQueryUtil;
 import io.cdap.plugin.gcp.common.GCPUtils;
@@ -110,7 +113,8 @@ public class PartitionedBigQueryInputFormat extends AbstractBigQueryInputFormat<
     try {
       bigQueryHelper = getBigQueryHelper(configuration);
     } catch (GeneralSecurityException gse) {
-      throw new IOException("Failed to create BigQuery client", gse);
+      throw ErrorUtils.getProgramFailureException(new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN),
+        "Failed to create BigQuery client", gse.getMessage(), ErrorType.UNKNOWN, true, gse);
     }
 
     List<HadoopConfigurationProperty<?>> hadoopConfigurationProperties = new ArrayList<>(

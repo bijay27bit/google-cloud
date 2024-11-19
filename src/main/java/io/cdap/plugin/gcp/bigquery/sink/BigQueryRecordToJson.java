@@ -189,7 +189,7 @@ public final class BigQueryRecordToJson {
           } else if (jsonString.startsWith("[") && jsonString.endsWith("]")) {
             writeJsonArrayToWriter(gson.fromJson(jsonString, JsonArray.class), writer);
           } else {
-            throw new IllegalStateException(String.format("Expected value of Field '%s' to be a valid JSON " +
+            throw new IllegalArgumentException(String.format("Expected value of Field '%s' to be a valid JSON " +
                     "object or array.", name));
           }
           break;
