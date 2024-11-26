@@ -266,7 +266,9 @@ Feature: GCS source - Verification of GCS to GCS Additional Tests successful
     Then Deploy the pipeline
     Then Run the Pipeline in Runtime
     Then Wait till pipeline is in running state
+    Then Open and capture logs
     And Verify the pipeline status is "Failed"
+    Then Close the pipeline logs
     Then Open Pipeline logs and verify Log entries having below listed Level and Message:
       | Level | Message                                                     |
       | ERROR | errorMessageMultipleFileWithFirstRowAsHeaderEnabled         |
@@ -300,7 +302,9 @@ Feature: GCS source - Verification of GCS to GCS Additional Tests successful
     Then Deploy the pipeline
     Then Run the Pipeline in Runtime
     Then Wait till pipeline is in running state
+    Then Open and capture logs
     And Verify the pipeline status is "Failed"
+    Then Close the pipeline logs
     Then Open Pipeline logs and verify Log entries having below listed Level and Message:
       | Level | Message                                                      |
       | ERROR | errorMessageMultipleFileWithoutClearDefaultSchema            |
