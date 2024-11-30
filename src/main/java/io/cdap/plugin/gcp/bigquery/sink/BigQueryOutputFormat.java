@@ -61,6 +61,10 @@ import com.google.cloud.hadoop.util.RetryDeterminer;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import io.cdap.cdap.api.data.format.StructuredRecord;
+import io.cdap.cdap.api.exception.ErrorCategory;
+import io.cdap.cdap.api.exception.ErrorType;
+import io.cdap.cdap.api.exception.ErrorUtils;
+import io.cdap.cdap.etl.api.exception.ErrorPhase;
 import io.cdap.plugin.gcp.bigquery.sink.lib.BigQueryStrings;
 import io.cdap.plugin.gcp.bigquery.source.BigQueryFactoryWithScopes;
 import io.cdap.plugin.gcp.bigquery.util.BigQueryConstants;
@@ -103,6 +107,7 @@ import javax.annotation.Nullable;
  */
 public class BigQueryOutputFormat extends ForwardingBigQueryFileOutputFormat<StructuredRecord, NullWritable> {
   private static final Logger LOG = LoggerFactory.getLogger(BigQueryOutputFormat.class);
+  private static final String errorMessageFormat = "Error occurred in the phase: '%s'. Error message: %s";
 
   @Override
   public RecordWriter<StructuredRecord, NullWritable> getRecordWriter(TaskAttemptContext taskAttemptContext)
@@ -165,19 +170,30 @@ public class BigQueryOutputFormat extends ForwardingBigQueryFileOutputFormat<Str
     // Error if the output path already exists.
     FileSystem outputFileSystem = outputPath.getFileSystem(conf);
     if (outputFileSystem.exists(outputPath)) {
-      throw new IOException("The output path '" + outputPath + "' already exists.");
+      String errorMessage = String.format("The output path '%s' already exists.", outputPath);
+      throw ErrorUtils.getProgramFailureException(
+        new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessage,
+        String.format(errorMessageFormat, ErrorPhase.VALIDATING_OUTPUT_SPECS, errorMessage), ErrorType.SYSTEM, true,
+        new IOException(errorMessage));
     }
 
     // Error if compression is set as there's mixed support in BigQuery.
     if (FileOutputFormat.getCompressOutput(job)) {
-      throw new IOException("Compression isn't supported for this OutputFormat.");
+      String errorMessage = "Compression isn't supported for this OutputFormat.";
+      throw ErrorUtils.getProgramFailureException(
+        new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessage,
+        String.format(errorMessageFormat, ErrorPhase.VALIDATING_OUTPUT_SPECS, errorMessage), ErrorType.SYSTEM, true,
+        new IOException(errorMessage));
     }
 
     // Error if unable to create a BigQuery helper.
     try {
       new BigQueryFactoryWithScopes(GCPUtils.BIGQUERY_SCOPES).getBigQueryHelper(conf);
     } catch (GeneralSecurityException gse) {
-      throw new IOException("Failed to create BigQuery client", gse);
+      String errorMessage = "Failed to create BigQuery client";
+      throw ErrorUtils.getProgramFailureException(
+        new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessage, String.format(errorMessageFormat,
+          ErrorPhase.VALIDATING_OUTPUT_SPECS, errorMessage), ErrorType.SYSTEM, true, gse);
     }
 
     // Let delegate process its checks.
@@ -208,7 +224,10 @@ public class BigQueryOutputFormat extends ForwardingBigQueryFileOutputFormat<Str
         BigQueryFactory bigQueryFactory = new BigQueryFactoryWithScopes(GCPUtils.BIGQUERY_SCOPES);
         this.bigQueryHelper = bigQueryFactory.getBigQueryHelper(context.getConfiguration());
       } catch (GeneralSecurityException e) {
-        throw new IOException("Failed to create Bigquery client.", e);
+        String errorMessage = "Failed to create BigQuery client";
+        throw ErrorUtils.getProgramFailureException(
+          new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessage,
+          String.format(errorMessageFormat, ErrorPhase.COMMITTING, errorMessage), ErrorType.SYSTEM, true, e);
       }
     }
 
@@ -266,7 +285,10 @@ public class BigQueryOutputFormat extends ForwardingBigQueryFileOutputFormat<Str
                       writeDisposition, sourceUris, partitionType, timePartitioningType, range, partitionByField,
                       requirePartitionFilter, clusteringOrderList, tableExists, jobLabelKeyValue, conf);
       } catch (Exception e) {
-        throw new IOException("Failed to import GCS into BigQuery. ", e);
+        String errorMessage = "Failed to import GCS into BigQuery.";
+        throw ErrorUtils.getProgramFailureException(
+          new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessage,
+          String.format(errorMessageFormat, ErrorPhase.COMMITTING, errorMessage), ErrorType.SYSTEM, true, e);
       }
 
       cleanup(jobContext);
@@ -566,26 +588,34 @@ public class BigQueryOutputFormat extends ForwardingBigQueryFileOutputFormat<Str
             int numOfErrors;
             String errorMessage;
             if (errors == null || errors.isEmpty()) {
-              errorMessage = pollJob.getStatus().getErrorResult().getMessage();
+              errorMessage = String.format("reason: %s, %s", pollJob.getStatus().getErrorResult().getReason(),
+                pollJob.getStatus().getErrorResult().getMessage());
               numOfErrors = 1;
             } else {
-              errorMessage = errors.get(errors.size() - 1).getMessage();
+              errorMessage = String.format("reason: %s, %s", errors.get(errors.size() - 1).getReason(),
+                errors.get(errors.size() - 1).getMessage());
               numOfErrors = errors.size();
             }
             // Only add first error message in the exception. For other errors user should look at BigQuery job logs.
-            throw new IOException(String.format("Error occurred while importing data to BigQuery '%s'." +
-                                                  " There are total %s error(s) for BigQuery job %s. Please look at " +
-                                                  "BigQuery job logs for more information.",
-                                                errorMessage, numOfErrors, jobReference.getJobId()));
+            String errorMessageException = String.format("Error occurred while importing data to BigQuery '%s'." +
+                " There are total %s error(s) for BigQuery job %s. Please look at " +
+                "BigQuery job logs for more information.",
+              errorMessage, numOfErrors, jobReference.getJobId());
+            throw ErrorUtils.getProgramFailureException(
+              new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessageException,
+              String.format(errorMessageFormat, ErrorPhase.COMMITTING, errorMessageException), ErrorType.UNKNOWN, true,
+              new IOException(errorMessageException));
+
           }
         } else {
           long millisToWait = pollBackOff.nextBackOffMillis();
           if (millisToWait == BackOff.STOP) {
-            throw new IOException(
-              String.format(
-                "Job %s failed to complete after %s millis.",
-                jobReference.getJobId(),
-                elapsedTime));
+            String errorMessage = String.format("Job %s failed to complete after %s millis.", jobReference.getJobId()
+              , elapsedTime);
+            throw ErrorUtils.getProgramFailureException(
+              new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessage,
+              String.format(errorMessageFormat, ErrorPhase.COMMITTING, errorMessage), ErrorType.UNKNOWN, true,
+              new IOException(errorMessage));
           }
           // Pause execution for the configured duration before polling job status again.
           Thread.sleep(millisToWait);
@@ -621,8 +651,11 @@ public class BigQueryOutputFormat extends ForwardingBigQueryFileOutputFormat<Str
           TableSchema tableSchema = createTableSchemaFromFields(fieldsJson);
           return Optional.of(tableSchema);
         } catch (IOException e) {
-          throw new IOException(
-            "Unable to parse key '" + BigQueryConfiguration.OUTPUT_TABLE_SCHEMA.getKey() + "'.", e);
+          String errorMessage = String.format("Unable to parse key '%s'.",
+            BigQueryConfiguration.OUTPUT_TABLE_SCHEMA.getKey());
+          throw ErrorUtils.getProgramFailureException(
+            new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN), errorMessage,
+            String.format(errorMessageFormat, ErrorPhase.COMMITTING, errorMessage), ErrorType.SYSTEM, true, e);
         }
       }
       return Optional.empty();

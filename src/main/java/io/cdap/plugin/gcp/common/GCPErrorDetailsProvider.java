@@ -22,11 +22,13 @@ import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
 import io.cdap.cdap.api.exception.ErrorCategory;
 import io.cdap.cdap.api.exception.ErrorCategory.ErrorCategoryEnum;
+import io.cdap.cdap.api.exception.ErrorType;
 import io.cdap.cdap.api.exception.ErrorUtils;
 import io.cdap.cdap.api.exception.ProgramFailureException;
 import io.cdap.cdap.etl.api.exception.ErrorContext;
 import io.cdap.cdap.etl.api.exception.ErrorDetailsProvider;
 
+import java.io.IOException;
 import java.util.List;
 
 /**
@@ -41,7 +43,6 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
    * @param e The Throwable to get the error information from.
    * @return A ProgramFailureException with the given error information, otherwise null.
    */
-  @Override
   public ProgramFailureException getExceptionDetails(Exception e, ErrorContext errorContext) {
     List<Throwable> causalChain = Throwables.getCausalChain(e);
     for (Throwable t : causalChain) {
@@ -51,6 +52,12 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
       }
       if (t instanceof HttpResponseException) {
         return getProgramFailureException((HttpResponseException) t, errorContext);
+      }
+      if (t instanceof IllegalArgumentException) {
+        return getProgramFailureException((IllegalArgumentException) t, errorContext);
+      }
+      if (t instanceof IllegalStateException) {
+        return getProgramFailureException((IllegalStateException) t, errorContext);
       }
     }
     return null;
@@ -63,8 +70,7 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
    * @param e The HttpResponseException to get the error information from.
    * @return A ProgramFailureException with the given error information.
    */
-  private ProgramFailureException getProgramFailureException(HttpResponseException e,
-    ErrorContext errorContext) {
+  private ProgramFailureException getProgramFailureException(HttpResponseException e, ErrorContext errorContext) {
     Integer statusCode = e.getStatusCode();
     ErrorUtils.ActionErrorPair pair = ErrorUtils.getActionErrorByStatusCode(statusCode);
     String errorReason = String.format("%s %s %s", e.getStatusCode(), e.getStatusMessage(),
@@ -91,6 +97,35 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
     return ErrorUtils.getProgramFailureException(new ErrorCategory(ErrorCategoryEnum.PLUGIN),
       errorReason, String.format(errorMessageFormat, errorContext.getPhase(), errorMessage),
       pair.getErrorType(), true, e);
+  }
+
+
+  /**
+   * Get a ProgramFailureException with the given error
+   * information from {@link IllegalArgumentException}.
+   *
+   * @param e The IllegalArgumentException to get the error information from.
+   * @return A ProgramFailureException with the given error information.
+   */
+  private ProgramFailureException getProgramFailureException(IllegalArgumentException e, ErrorContext errorContext) {
+    String errorMessage = e.getMessage();
+    String errorMessageFormat = "Error occurred in the phase: '%s'. Error message: %s";
+    return ErrorUtils.getProgramFailureException(new ErrorCategory(ErrorCategoryEnum.PLUGIN), errorMessage,
+      String.format(errorMessageFormat, errorContext.getPhase(), errorMessage), ErrorType.USER, false, e);
+  }
+
+  /**
+   * Get a ProgramFailureException with the given error
+   * information from {@link IllegalStateException}.
+   *
+   * @param e The IllegalStateException to get the error information from.
+   * @return A ProgramFailureException with the given error information.
+   */
+  private ProgramFailureException getProgramFailureException(IllegalStateException e, ErrorContext errorContext) {
+    String errorMessage = e.getMessage();
+    String errorMessageFormat = "Error occurred in the phase: '%s'. Error message: %s";
+    return ErrorUtils.getProgramFailureException(new ErrorCategory(ErrorCategoryEnum.PLUGIN), errorMessage,
+      String.format(errorMessageFormat, errorContext.getPhase(), errorMessage), ErrorType.SYSTEM, false, e);
   }
 
   /**

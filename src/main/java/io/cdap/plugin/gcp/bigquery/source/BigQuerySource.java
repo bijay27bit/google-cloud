@@ -48,9 +48,11 @@ import io.cdap.cdap.etl.api.batch.BatchSource;
 import io.cdap.cdap.etl.api.batch.BatchSourceContext;
 import io.cdap.cdap.etl.api.connector.Connector;
 import io.cdap.cdap.etl.api.engine.sql.SQLEngineInput;
+import io.cdap.cdap.etl.api.exception.ErrorDetailsProviderSpec;
 import io.cdap.cdap.etl.api.validation.ValidationFailure;
 import io.cdap.plugin.common.Asset;
 import io.cdap.plugin.common.LineageRecorder;
+import io.cdap.plugin.gcp.bigquery.common.BigQueryErrorDetailsProvider;
 import io.cdap.plugin.gcp.bigquery.connector.BigQueryConnector;
 import io.cdap.plugin.gcp.bigquery.sqlengine.BigQueryReadDataset;
 import io.cdap.plugin.gcp.bigquery.sqlengine.BigQuerySQLEngine;
@@ -135,7 +137,16 @@ public final class BigQuerySource extends BatchSource<LongWritable, GenericData.
 
     // Create BigQuery client
     String serviceAccount = config.getServiceAccount();
-    Credentials credentials = BigQuerySourceUtils.getCredentials(config.getConnection());
+    Credentials credentials = null;
+    try {
+      credentials = BigQuerySourceUtils.getCredentials(config.getConnection());
+    } catch (Exception e) {
+      String errorReason = "Unable to load service account credentials.";
+      collector.addFailure(String.format("%s %s", errorReason, e.getMessage()), null)
+        .withStacktrace(e.getStackTrace());
+      collector.getOrThrowException();
+    }
+
     BigQuery bigQuery = GCPUtils.getBigQuery(config.getProject(), credentials, null);
     Dataset dataset = bigQuery.getDataset(DatasetId.of(config.getDatasetProject(), config.getDataset()));
     Storage storage = GCPUtils.getStorage(config.getProject(), credentials);
@@ -144,19 +155,30 @@ public final class BigQuerySource extends BatchSource<LongWritable, GenericData.
     bucketPath = UUID.randomUUID().toString();
     CryptoKeyName cmekKeyName = CmekUtils.getCmekKey(config.cmekKey, context.getArguments().asMap(), collector);
     collector.getOrThrowException();
-    configuration = BigQueryUtil.getBigQueryConfig(serviceAccount, config.getProject(), cmekKeyName,
-                                                   config.getServiceAccountType());
+    try {
+      configuration = BigQueryUtil.getBigQueryConfig(serviceAccount, config.getProject(), cmekKeyName,
+        config.getServiceAccountType());
+    } catch (Exception e) {
+      String errorReason = "Failed to create BigQuery configuration.";
+      collector.addFailure(String.format("%s %s", errorReason, e.getMessage()), null)
+        .withStacktrace(e.getStackTrace());
+      collector.getOrThrowException();
+    }
 
     String bucketName = BigQueryUtil.getStagingBucketName(context.getArguments().asMap(), null,
                                                           dataset, config.getBucket());
 
     // Configure GCS Bucket to use
-    String bucket = BigQuerySourceUtils.getOrCreateBucket(configuration,
-                                                          storage,
-                                                          bucketName,
-                                                          dataset,
-                                                          bucketPath,
-                                                          cmekKeyName);
+    String bucket = null;
+    try {
+      bucket = BigQuerySourceUtils.getOrCreateBucket(configuration, storage, bucketName, dataset, bucketPath,
+        cmekKeyName);
+    } catch (Exception e) {
+      String errorReason = "Failed to create bucket.";
+      collector.addFailure(String.format("%s %s", errorReason, e.getMessage()), null)
+        .withStacktrace(e.getStackTrace());
+      collector.getOrThrowException();
+    }
 
     // Configure Service account credentials
     BigQuerySourceUtils.configureServiceAccount(configuration, config.getConnection());
@@ -166,10 +188,17 @@ public final class BigQuerySource extends BatchSource<LongWritable, GenericData.
 
     // Configure BigQuery input format.
     String temporaryGcsPath = BigQuerySourceUtils.getTemporaryGcsPath(bucket, bucketPath, bucketPath);
-    BigQuerySourceUtils.configureBigQueryInput(configuration,
-                                               DatasetId.of(config.getDatasetProject(), config.getDataset()),
-                                               config.getTable(),
-                                               temporaryGcsPath);
+    try {
+      BigQuerySourceUtils.configureBigQueryInput(configuration,
+        DatasetId.of(config.getDatasetProject(), config.getDataset()),
+        config.getTable(),
+        temporaryGcsPath);
+    } catch (Exception e) {
+      String errorReason = "Failed to configure BigQuery input.";
+      collector.addFailure(String.format("%s %s", errorReason, e.getMessage()), null)
+        .withStacktrace(e.getStackTrace());
+      collector.getOrThrowException();
+    }
 
     // Both emitLineage and setOutputFormat internally try to create an external dataset if it does not already exists.
     // We call emitLineage before since it creates the dataset with schema.
@@ -178,6 +207,10 @@ public final class BigQuerySource extends BatchSource<LongWritable, GenericData.
       .setFqn(BigQueryUtil.getFQN(config.getDatasetProject(), config.getDataset(), config.getTable()))
       .setLocation(dataset.getLocation())
       .build();
+
+    // set error details provider
+    context.setErrorDetailsProvider(new ErrorDetailsProviderSpec(BigQueryErrorDetailsProvider.class.getName()));
+
     emitLineage(context, configuredSchema, sourceTableType, config.getTable(), asset);
     setInputFormat(context, configuredSchema);
   }

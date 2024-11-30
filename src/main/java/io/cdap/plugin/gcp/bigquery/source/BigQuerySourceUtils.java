@@ -25,6 +25,9 @@ import com.google.cloud.hadoop.io.bigquery.BigQueryConfiguration;
 import com.google.cloud.kms.v1.CryptoKeyName;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageException;
+import io.cdap.cdap.api.exception.ErrorCategory;
+import io.cdap.cdap.api.exception.ErrorType;
+import io.cdap.cdap.api.exception.ErrorUtils;
 import io.cdap.plugin.gcp.bigquery.connector.BigQueryConnectorConfig;
 import io.cdap.plugin.gcp.bigquery.util.BigQueryConstants;
 import io.cdap.plugin.gcp.bigquery.util.BigQueryUtil;
@@ -93,10 +96,12 @@ public class BigQuerySourceUtils {
           // Ignore this and move on, since all that matters is that the bucket exists.
           return bucket;
         }
-        throw new IOException(String.format("Unable to create Cloud Storage bucket '%s' in the same " +
+        String errorMessage = String.format("Unable to create Cloud Storage bucket '%s' in the same " +
                                               "location ('%s') as BigQuery dataset '%s'. " + "Please use a bucket " +
                                               "that is in the same location as the dataset.",
-                                            bucket, dataset.getLocation(), dataset.getDatasetId().getDataset()), e);
+                                            bucket, dataset.getLocation(), dataset.getDatasetId().getDataset());
+        throw ErrorUtils.getProgramFailureException(new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN),
+          errorMessage, e.getMessage(), ErrorType.USER, true, e);
       }
     }
 

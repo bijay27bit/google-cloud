@@ -20,6 +20,9 @@ import io.cdap.cdap.api.common.Bytes;
 import io.cdap.cdap.api.data.format.StructuredRecord;
 import io.cdap.cdap.api.data.format.UnexpectedFormatException;
 import io.cdap.cdap.api.data.schema.Schema;
+import io.cdap.cdap.api.exception.ErrorCategory;
+import io.cdap.cdap.api.exception.ErrorType;
+import io.cdap.cdap.api.exception.ErrorUtils;
 import io.cdap.plugin.common.RecordConverter;
 import org.apache.avro.generic.GenericRecord;
 
@@ -90,11 +93,11 @@ public class BigQueryAvroToStructuredTransformer extends RecordConverter<Generic
             try {
               LocalDateTime.parse(field.toString());
             } catch (DateTimeParseException exception) {
-              throw new UnexpectedFormatException(
-                String.format("Datetime field with value '%s' is not in ISO-8601 format.",
-                              fieldSchema.getDisplayName(),
-                              field.toString()),
-                exception);
+              String errorMessage = String.format("Datetime field %s with value '%s' is not in ISO-8601 format.",
+                fieldSchema.getDisplayName(), field);
+              throw ErrorUtils.getProgramFailureException(
+                new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN, "DataError"),
+                errorMessage, exception.getMessage(), ErrorType.USER, true, exception);
             }
             //If properly formatted return the string
             return field.toString();
@@ -110,7 +113,9 @@ public class BigQueryAvroToStructuredTransformer extends RecordConverter<Generic
         }
       }
     } catch (ArithmeticException e) {
-      throw new IOException("Field type %s has value that is too large." + fieldType);
+      throw ErrorUtils.getProgramFailureException(new ErrorCategory(ErrorCategory.ErrorCategoryEnum.PLUGIN,
+          "DataError"),
+        "Field type %s has value that is too large.", e.getMessage(), ErrorType.USER, true, e);
     }
 
     // Complex types like maps and unions are not supported in BigQuery plugins.
