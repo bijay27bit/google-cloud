@@ -40,8 +40,10 @@ Feature: GCSCreate - Verification of GCS Create plugin
     Then Wait till pipeline is in running state
     Then Verify the pipeline status is "Succeeded"
     Then Run the Pipeline in Runtime
-    Then Wait till pipeline is in running state
+    Then Wait for pipeline to be in status: "Failed" with a timeout of 240 seconds
+    Then Open and capture logs
     Then Verify the pipeline status is "Failed"
+    Then Close the pipeline logs
 
   @GCS_CSV_TEST @GCSCreate_Required
   Scenario: Verify the pipeline with GCSCreate should not fail on second run when fail if objects exists is false
@@ -60,5 +62,7 @@ Feature: GCSCreate - Verification of GCS Create plugin
     Then Wait till pipeline is in running state
     Then Verify the pipeline status is "Succeeded"
     Then Run the Pipeline in Runtime
-    Then Wait till pipeline is in running state
+    Then Wait for pipeline to be in status: "Succeeded" with a timeout of 240 seconds
+    Then Open and capture logs
     Then Verify the pipeline status is "Succeeded"
+    Then Close the pipeline logs
