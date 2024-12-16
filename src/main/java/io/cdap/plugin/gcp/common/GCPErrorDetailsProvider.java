@@ -22,6 +22,7 @@ import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
 import io.cdap.cdap.api.exception.ErrorCategory;
 import io.cdap.cdap.api.exception.ErrorCategory.ErrorCategoryEnum;
+import io.cdap.cdap.api.exception.ErrorCodeType;
 import io.cdap.cdap.api.exception.ErrorType;
 import io.cdap.cdap.api.exception.ErrorUtils;
 import io.cdap.cdap.api.exception.ProgramFailureException;
@@ -78,12 +79,13 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
     String errorMessageFormat = "Error occurred in the phase: '%s'. Error message: %s";
 
     String errorMessage = e.getMessage();
+    String externalDocumentationLink = null;
     if (e instanceof GoogleJsonResponseException) {
       GoogleJsonResponseException exception = (GoogleJsonResponseException) e;
       errorMessage = exception.getDetails() != null ? exception.getDetails().getMessage() :
         exception.getMessage();
 
-      String externalDocumentationLink = getExternalDocumentationLink();
+      externalDocumentationLink = getExternalDocumentationLink();
       if (!Strings.isNullOrEmpty(externalDocumentationLink)) {
 
         if (!errorReason.endsWith(".")) {
@@ -96,7 +98,8 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
 
     return ErrorUtils.getProgramFailureException(new ErrorCategory(ErrorCategoryEnum.PLUGIN),
       errorReason, String.format(errorMessageFormat, errorContext.getPhase(), errorMessage),
-      pair.getErrorType(), true, e);
+      pair.getErrorType(), true, ErrorCodeType.HTTP, statusCode.toString(),
+        externalDocumentationLink, e);
   }
 
 
