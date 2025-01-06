@@ -74,16 +74,14 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
   private ProgramFailureException getProgramFailureException(HttpResponseException e, ErrorContext errorContext) {
     Integer statusCode = e.getStatusCode();
     ErrorUtils.ActionErrorPair pair = ErrorUtils.getActionErrorByStatusCode(statusCode);
-    String errorReason = String.format("%s %s %s", e.getStatusCode(), e.getStatusMessage(),
+    String errorReason = String.format("%s %s. %s", e.getStatusCode(), e.getStatusMessage(),
       pair.getCorrectiveAction());
     String errorMessageFormat = "Error occurred in the phase: '%s'. Error message: %s";
 
     String errorMessage = e.getMessage();
     String externalDocumentationLink = null;
     if (e instanceof GoogleJsonResponseException) {
-      GoogleJsonResponseException exception = (GoogleJsonResponseException) e;
-      errorMessage = exception.getDetails() != null ? exception.getDetails().getMessage() :
-        exception.getMessage();
+      errorMessage = getErrorMessage((GoogleJsonResponseException) e);
 
       externalDocumentationLink = getExternalDocumentationLink();
       if (!Strings.isNullOrEmpty(externalDocumentationLink)) {
@@ -100,6 +98,17 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
       errorReason, String.format(errorMessageFormat, errorContext.getPhase(), errorMessage),
       pair.getErrorType(), true, ErrorCodeType.HTTP, statusCode.toString(),
         externalDocumentationLink, e);
+  }
+
+  private String getErrorMessage(GoogleJsonResponseException exception) {
+    if (exception.getDetails() != null) {
+      try {
+        return exception.getDetails().toPrettyString();
+      } catch (IOException e) {
+        return exception.getDetails().toString();
+      }
+    }
+    return exception.getMessage();
   }
 
 
