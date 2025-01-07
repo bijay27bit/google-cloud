@@ -101,6 +101,9 @@ public class GCPErrorDetailsProvider implements ErrorDetailsProvider {
   }
 
   private String getErrorMessage(GoogleJsonResponseException exception) {
+    if (!Strings.isNullOrEmpty(exception.getMessage())) {
+      return exception.getMessage();
+    }
     if (exception.getDetails() != null) {
       try {
         return exception.getDetails().toPrettyString();
