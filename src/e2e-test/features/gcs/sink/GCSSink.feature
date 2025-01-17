@@ -267,7 +267,7 @@ Feature: GCS sink - Verification of GCS Sink plugin
     Then Verify data is transferred to target GCS bucket
 
   @BQ_SOURCE_TEST @GCS_SINK_TEST
-  Scenario Outline: To verify data is getting transferred successfully from BigQuery to GCS with contenttype selection and filesystem property
+  Scenario Outline: To verify data is getting transferred successfully from BigQuery to GCS with contenttype selection and filesystem Property field
     Given Open Datafusion Project to configure pipeline
     When Select plugin: "BigQuery" from the plugins list as: "Source"
     When Expand Plugin group in the LHS plugins list: "Sink"
